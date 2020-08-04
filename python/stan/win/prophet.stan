@@ -104,6 +104,29 @@ functions {
     return rep_array(m, T);
   }
 
+  // Seasonal Shift function
+
+  real[] seasonal_shift(
+    real[] delta_s,
+    real[] t,
+    real[ , ] B,
+    real[] t_change2,
+    real[ , ] X,
+    int S2,
+    int K,
+    int T
+  ) {
+    real gamma_s[S2];
+    real Y[T];
+    real new_X[T, K];
+    int curr_shift;
+
+    for (i in 1:T) {
+      curr_shift = round(dot_product(B[i], delta_s));
+      new_X[i, ] = X[i + curr_shift, ];
+    }
+    return new_X;
+  }
 
 }
 
@@ -114,10 +137,13 @@ data {
   real cap[T];          // Capacities for logistic trend
   real y[T];            // Time series
   int S;                // Number of changepoints
+  int S2;                // Number of seasonal shift changepoints
   real t_change[S];     // Times of trend changepoints
+  real t_change2[S2];     // Times of seasonal shift changepoints
   real X[T,K];         // Regressors
   vector[K] sigmas;     // Scale on seasonality prior
   real<lower=0> tau;    // Scale on changepoints prior
+  real<lower=0> tau_s;    // Scale on seasonal shift changepoints prior
   int trend_indicator;  // 0 for linear, 1 for logistic, 2 for flat
   real s_a[K];          // Indicator of additive features
   real s_m[K];          // Indicator of multiplicative features
@@ -126,12 +152,16 @@ data {
 transformed data {
   real A[T, S];
   A = get_changepoint_matrix(t, t_change, T, S);
+  real B[T, S2];
+  B = get_changepoint_matrix(t, t_change2, T, S2)
 }
 
 parameters {
   real k;                   // Base trend growth rate
   real m;                   // Trend offset
+  real m2;                   //  offset
   real delta[S];            // Trend rate adjustments
+  real delta_s[S2];            // Seasonal shift
   real<lower=0> sigma_obs;  // Observation noise
   real beta[K];             // Regressor coefficients
 }
@@ -141,6 +171,7 @@ transformed parameters {
   real Y[T];
   real beta_m[K];
   real beta_a[K];
+  real new_X[T, K];    // With seasonal shifts
 
   if (trend_indicator == 0) {
     trend = linear_trend(k, m, delta, t, A, t_change, S, T);
@@ -155,9 +186,11 @@ transformed parameters {
     beta_a[i] = beta[i] * s_a[i];
   }
 
+  new_X = seasonal_shift(delta_s, t, B, t_change2, X, S2, K, T)
+
   for (i in 1:T) {
     Y[i] = (
-      trend[i] * (1 + dot_product(X[i], beta_m)) + dot_product(X[i], beta_a)
+      trend[i] * (1 + dot_product(new_X[i], beta_m)) + dot_product(new_X[i], beta_a)
     );
   }
 }
@@ -167,6 +200,7 @@ model {
   k ~ normal(0, 5);
   m ~ normal(0, 5);
   delta ~ double_exponential(0, tau);
+  delta_s ~ double_exponential(0, tau_s)
   sigma_obs ~ normal(0, 0.5);
   beta ~ normal(0, sigmas);
 
