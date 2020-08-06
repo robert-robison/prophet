@@ -81,9 +81,12 @@ class Prophet(object):
             changepoints=None,
             n_changepoints=25,
             changepoint_range=0.8,
-            seasonal_changepoints=None,
-            n_seasonal_changepoints=25,
-            seasonal_changepoint_range=1.0,
+            yearly_changepoints=None,
+            n_yearly_changepoints=25,
+            yearly_changepoint_range=1.0,
+            weekly_changepoints=None,
+            n_weekly_changepoints=25,
+            weekly_changepoint_range=1.0,
             yearly_seasonality='auto',
             weekly_seasonality='auto',
             daily_seasonality='auto',
@@ -92,7 +95,8 @@ class Prophet(object):
             seasonality_prior_scale=10.0,
             holidays_prior_scale=10.0,
             changepoint_prior_scale=0.05,
-            seasonal_changepoint_prior_scale=0.05,
+            yearly_changepoint_prior_scale=0.05,
+            weekly_changepoint_prior_scale=0.05,
             mcmc_samples=0,
             interval_width=0.80,
             uncertainty_samples=1000,
@@ -111,17 +115,27 @@ class Prophet(object):
             self.specified_changepoints = False
 
         # Seasonal shift changepoints
-        self.seasonal_changepoints = seasonal_changepoints
-        if self.seasonal_changepoints is not None:
-            self.seasonal_changepoints = pd.Series(pd.to_datetime(self.seasonal_changepoints), name='ds')
-            self.n_seasonal_changepoints = len(self.seasonal_changepoints)
-            self.specified_seasonal_changepoints = True
+        self.yearly_changepoints = yearly_changepoints
+        if self.yearly_changepoints is not None:
+            self.yearly_changepoints = pd.Series(pd.to_datetime(self.yearly_changepoints), name='ds')
+            self.n_yearly_changepoints = len(self.yearly_changepoints)
+            self.specified_yearly_changepoints = True
         else:
-            self.n_seasonal_changepoints = n_seasonal_changepoints
-            self.specified_seasonal_changepoints = False
+            self.n_yearly_changepoints = n_yearly_changepoints
+            self.specified_yearly_changepoints = False
+
+        self.weekly_changepoints = weekly_changepoints
+        if self.weekly_changepoints is not None:
+            self.weekly_changepoints = pd.Series(pd.to_datetime(self.weekly_changepoints), name='ds')
+            self.n_weekly_changepoints = len(self.weekly_changepoints)
+            self.specified_weekly_changepoints = True
+        else:
+            self.n_weekly_changepoints = n_weekly_changepoints
+            self.specified_weekly_changepoints = False
 
         self.changepoint_range = changepoint_range
-        self.seasonal_changepoint_range = seasonal_changepoint_range
+        self.yearly_changepoint_range = yearly_changepoint_range
+        self.weekly_changepoint_range = weekly_changepoint_range
         self.yearly_seasonality = yearly_seasonality
         self.weekly_seasonality = weekly_seasonality
         self.daily_seasonality = daily_seasonality
@@ -130,7 +144,8 @@ class Prophet(object):
         self.seasonality_mode = seasonality_mode
         self.seasonality_prior_scale = float(seasonality_prior_scale)
         self.changepoint_prior_scale = float(changepoint_prior_scale)
-        self.seasonal_changepoint_prior_scale = float(changepoint_prior_scale)
+        self.yearly_changepoint_prior_scale = float(yearly_changepoint_prior_scale)
+        self.weekly_changepoint_prior_scale = float(weekly_changepoint_prior_scale)
         self.holidays_prior_scale = float(holidays_prior_scale)
 
         self.mcmc_samples = mcmc_samples
@@ -143,7 +158,8 @@ class Prophet(object):
         self.logistic_floor = False
         self.t_scale = None
         self.changepoints_t = None
-        self.seasonal_changepoints_t = None
+        self.yearly_changepoints_t = None
+        self.weekly_changepoints_t = None
         self.seasonalities = OrderedDict({})
         self.extra_regressors = OrderedDict({})
         self.country_holidays = None
@@ -432,13 +448,13 @@ class Prophet(object):
         else:
             self.changepoints_t = np.array([0])  # dummy changepoint
 
-        # Seasonal changepoints
-        if self.seasonal_changepoints is not None:
-            if len(self.seasonal_changepoints) == 0:
+        # Yearly changepoints
+        if self.yearly_changepoints is not None:
+            if len(self.yearly_changepoints) == 0:
                 pass
             else:
-                too_low = min(self.seasonal_changepoints) < self.history['ds'].min()
-                too_high = max(self.seasonal_changepoints) > self.history['ds'].max()
+                too_low = min(self.yearly_changepoints) < self.history['ds'].min()
+                too_high = max(self.yearly_changepoints) > self.history['ds'].max()
                 if too_low or too_high:
                     raise ValueError(
                         'Changepoints must fall within training data.')
@@ -446,34 +462,75 @@ class Prophet(object):
             # Place potential changepoints evenly through first
             # `changepoint_range` proportion of the history
             hist_size = int(np.floor(self.history.shape[0]
-                                     * self.seasonal_changepoint_range))
-            if self.n_seasonal_changepoints + 1 > hist_size:
-                self.n_seasonal_changepoints = hist_size - 1
+                                     * self.yearly_changepoint_range))
+            if self.n_yearly_changepoints + 1 > hist_size:
+                self.n_yearly_changepoints = hist_size - 1
                 logger.info(
                     'n_changepoints greater than number of observations. '
                     'Using {n_changepoints}.'
-                    .format(n_changepoints=self.n_seasonal_changepoints)
+                    .format(n_changepoints=self.n_yearly_changepoints)
                 )
-            if self.n_seasonal_changepoints > 0:
+            if self.n_yearly_changepoints > 0:
                 cp_indexes = (
-                    np.linspace(0, hist_size - 1, self.n_seasonal_changepoints + 1)
+                    np.linspace(0, hist_size - 1, self.n_yearly_changepoints + 1)
                         .round()
                         .astype(np.int)
                 )
-                self.seasonal_changepoints = (
+                self.yearly_changepoints = (
                     self.history.iloc[cp_indexes]['ds'].tail(-1)
                 )
             else:
                 # set empty changepoints
-                self.seasonal_changepoints = pd.Series(pd.to_datetime([]), name='ds')
-        if len(self.seasonal_changepoints) > 0:
-            self.seasonal_changepoints_t = np.sort(np.array(
-                (self.seasonal_changepoints - self.start) / self.t_scale))
+                self.yearly_changepoints = pd.Series(pd.to_datetime([]), name='ds')
+        if len(self.yearly_changepoints) > 0:
+            self.yearly_changepoints_t = np.sort(np.array(
+                (self.yearly_changepoints - self.start) / self.t_scale))
         else:
-            self.changepoints_t = np.array([0])  # dummy changepoint
+            self.yearly_changepoints_t = np.array([0])  # dummy changepoint
+
+        # Weekly changepoints
+
+        if self.weekly_changepoints is not None:
+            if len(self.weekly_changepoints) == 0:
+                pass
+            else:
+                too_low = min(self.weekly_changepoints) < self.history['ds'].min()
+                too_high = max(self.weekly_changepoints) > self.history['ds'].max()
+                if too_low or too_high:
+                    raise ValueError(
+                        'Changepoints must fall within training data.')
+        else:
+            # Place potential changepoints evenly through first
+            # `changepoint_range` proportion of the history
+            hist_size = int(np.floor(self.history.shape[0]
+                                     * self.weekly_changepoint_range))
+            if self.n_weekly_changepoints + 1 > hist_size:
+                self.n_weekly_changepoints = hist_size - 1
+                logger.info(
+                    'n_changepoints greater than number of observations. '
+                    'Using {n_changepoints}.'
+                    .format(n_changepoints=self.n_weekly_changepoints)
+                )
+            if self.n_weekly_changepoints > 0:
+                cp_indexes = (
+                    np.linspace(0, hist_size - 1, self.n_weekly_changepoints + 1)
+                        .round()
+                        .astype(np.int)
+                )
+                self.weekly_changepoints = (
+                    self.history.iloc[cp_indexes]['ds'].tail(-1)
+                )
+            else:
+                # set empty changepoints
+                self.weekly_changepoints = pd.Series(pd.to_datetime([]), name='ds')
+        if len(self.weekly_changepoints) > 0:
+            self.weekly_changepoints_t = np.sort(np.array(
+                (self.weekly_changepoints - self.start) / self.t_scale))
+        else:
+            self.weekly_changepoints_t = np.array([0])  # dummy changepoint
 
     @staticmethod
-    def fourier_series(dates, period, series_order):
+    def fourier_series(dates, period, series_order, offset=None):
         """Provides Fourier series components with the specified frequency
         and order.
 
@@ -487,12 +544,14 @@ class Prophet(object):
         -------
         Matrix with seasonality features.
         """
+        if offset is None:
+            offset = np.zeros(len(dates))
         # convert to days since epoch
         t = np.array(
             (dates - datetime(1970, 1, 1))
                 .dt.total_seconds()
                 .astype(np.float)
-        ) / (3600 * 24.)
+        ) / (3600 * 24.) + offset
         return np.column_stack([
             fun((2.0 * (i + 1) * np.pi * t / period))
             for i in range(series_order)
@@ -500,7 +559,7 @@ class Prophet(object):
         ])
 
     @classmethod
-    def make_seasonality_features(cls, dates, period, series_order, prefix):
+    def make_seasonality_features(cls, dates, period, series_order, prefix, offset=None):
         """Data frame with seasonality features.
 
         Parameters
@@ -515,7 +574,7 @@ class Prophet(object):
         -------
         pd.DataFrame with seasonality features.
         """
-        features = cls.fourier_series(dates, period, series_order)
+        features = cls.fourier_series(dates, period, series_order, offset=offset)
         columns = [
             '{}_delim_{}'.format(prefix, i + 1)
             for i in range(features.shape[1])
@@ -820,13 +879,31 @@ class Prophet(object):
         prior_scales = []
         modes = {'additive': [], 'multiplicative': []}
 
+        changepoints = {
+            'weekly': self.weekly_changepoints_t,
+            'yearly': self.yearly_changepoints_t,
+        }
+
         # Seasonality features
         for name, props in self.seasonalities.items():
+            offset = np.zeros(len(df))
+            if f'delta_{name}' in self.params:
+                # Generate offsets
+                delta = self.params[f'delta_{name}']
+                curr_ind = 0
+                for i in range(len(offset)):
+                    if df['t'].iloc[i] > changepoints[name][curr_ind]:
+                        offset[i:] = delta[:(curr_ind + 1)].sum()
+                        curr_ind += 1
+                        if curr_ind >= len(delta):
+                            break
+
             features = self.make_seasonality_features(
                 df['ds'],
                 props['period'],
                 props['fourier_order'],
                 name,
+                offset=offset
             )
             if props['condition_name'] is not None:
                 features[~df[props['condition_name']]] = 0
@@ -1181,22 +1258,38 @@ class Prophet(object):
 
         trend_indicator = {'linear': 0, 'logistic': 1, 'flat': 2}
 
+        t_days = np.array(
+            (history['ds'] - datetime(1970, 1, 1))
+                .dt.total_seconds()
+                .astype(np.float)
+        ) / (3600 * 24.)
+
+        m, b = np.polyfit(history['t'].values, t_days, deg=1)
+        self.yearly_changepoints_t_daily = m * self.yearly_changepoints_t + b
+        self.weekly_changepoints_t_daily = m * self.weekly_changepoints_t + b
+
         dat = {
             'T': history.shape[0],
             'K': seasonal_features.shape[1],
+            'yearly_K': self.yearly_seasonality,
+            'weekly_K': self.weekly_seasonality,
             'S': len(self.changepoints_t),
             'y': history['y_scaled'],
             't': history['t'],
+            't_days': t_days,
             't_change': self.changepoints_t,
-            'X': seasonal_features,
+            # 'X': seasonal_features,
             'sigmas': prior_scales,
             'tau': self.changepoint_prior_scale,
             'trend_indicator': trend_indicator[self.growth],
             's_a': component_cols['additive_terms'],
             's_m': component_cols['multiplicative_terms'],
-            'S2': len(self.seasonal_changepoints_t),
-            't_change2': self.seasonal_changepoints_t,
-            'tau2': self.seasonal_changepoint_prior_scale,
+            'S_yearly': len(self.yearly_changepoints_t),
+            'S_weekly': len(self.weekly_changepoints_t),
+            't_change_yearly': self.yearly_changepoints_t_daily,
+            't_change_weekly': self.weekly_changepoints_t_daily,
+            'tau_yearly': self.yearly_changepoint_prior_scale,
+            'tau_weekly': self.weekly_changepoint_prior_scale,
         }
 
         if self.growth == 'linear':
@@ -1213,9 +1306,10 @@ class Prophet(object):
             'k': kinit[0],
             'm': kinit[1],
             'delta': np.zeros(len(self.changepoints_t)),
+            'delta_yearly': np.zeros(len(self.yearly_changepoints_t)),
+            'delta_weekly': np.zeros(len(self.weekly_changepoints_t)),
             'beta': np.zeros(seasonal_features.shape[1]),
             'sigma_obs': 1,
-            'delta_s': np.zeros(len(self.seasonal_changepoints_t))
         }
 
         if history['y'].min() == history['y'].max() and \
